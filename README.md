@@ -1,3 +1,14 @@
+hexbright_jrt: modifications to hexbright_factory
+
+* Incorportated accelerometer, 10 minute timeout mode, and the 5 second power off shortcut code from https://github.com/bhimoff/HexBrightFLEX
+* Modified the duty cycle on the flashing mode to be more bicycle friendly
+* Removed the low brightness mode
+* Added a last-on memory.
+* Code reformatting and reorganization
+
+
+
+
 HexBright Demo Code 
 =======================
 
