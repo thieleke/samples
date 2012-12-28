@@ -3,7 +3,7 @@
  Factory firmware for HexBright FLEX 
  v2.4  Dec 6, 2012
  Modifications from Jeff Thieleke:
-    * Incorportated accelerometer, 10 minute timeout mode, and the 5 second power off shortcut code from https://github.com/bhimoff/HexBrightFLEX
+    * Incorporated accelerometer, 10 minute timeout mode, and the 5 second power off shortcut code from https://github.com/bhimoff/HexBrightFLEX
     * Modified the duty cycle on the flashing mode to be more bicycle friendly
     * Removed the low brightness mode
     * Added a last-on memory.
