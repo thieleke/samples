@@ -3,7 +3,7 @@
  Factory firmware for HexBright FLEX
  v2.4  Dec 6, 2012
  Modifications from Jeff Thieleke:
-    * Incorporated accelerometer, 10 minute timeout mode, and the 5 second power off shortcut code from https://github.com/bhimoff/HexBrightFLEX
+    * Incorporated accelerometer, 30 minute timeout mode, and the 2 second power off shortcut code from https://github.com/bhimoff/HexBrightFLEX
     * Modified the duty cycle on the blinking mode to be more bicycle friendly
     * Added a last-on memory (including blinking brightness level)
     * Code reformatting and reorganization
@@ -11,6 +11,7 @@
 
 #include <math.h>
 #include <Wire.h>
+#include <EEPROM.h>
 
 // Settings
 #define OVERTEMP                340
@@ -42,6 +43,8 @@
 #define MODE_HIGH               3
 #define MODE_BLINKING           4
 #define MODE_BLINKING_PREVIEW   5
+// EEPROM
+#define EEPROM_LAST_ON_MODE		0
 
 // Defaults
 const int defaultMode = MODE_HIGH;
@@ -50,7 +53,7 @@ const int noAccelShutoffMilliseconds = 30 * 60 * 1000;
 
 // State
 byte mode = 0;
-byte lastOnMode = defaultMode;
+byte lastOnMode = 0;
 unsigned long btnTime = 0;
 boolean btnDown = false;
 int lastChargeState = 0;
@@ -58,10 +61,12 @@ unsigned long lastModeTime = 0;
 unsigned long oneSecondLoopTime = 0;
 unsigned long lastAccelTime = 0;
 unsigned long noAccelShutoffTime = 0;
-
+unsigned long poweringOffTime = 0;
 
 void setup()
 {
+    const unsigned long time = millis();
+
     // We just powered on!  That means either we got plugged
     // into USB, or the user is pressing the power button.
     pinMode(DPIN_PWR,      INPUT);
@@ -77,8 +82,6 @@ void setup()
     digitalWrite(DPIN_DRV_MODE, LOW);
     digitalWrite(DPIN_DRV_EN,   LOW);
     digitalWrite(DPIN_ACC_INT,  HIGH);
-
-    setLightOff();
 
     // Initialize serial busses
     Serial.begin(9600);
@@ -103,8 +106,24 @@ void setup()
     Wire.write(enable, sizeof(enable));
     Wire.endTransmission();
 
-    btnTime = millis();
+    btnTime = time;
     btnDown = digitalRead(DPIN_RLED_SW);
+
+    mode = MODE_OFF;
+    lastOnMode = 0;
+    btnTime = 0;
+    btnDown = false;
+    lastChargeState = 0;
+    lastModeTime = 0;
+    oneSecondLoopTime = 0;
+    lastAccelTime = 0;
+    noAccelShutoffTime = 0;
+
+    lastOnMode = EEPROM.read(EEPROM_LAST_ON_MODE);
+    if (lastOnMode < MODE_LOW || lastOnMode > MODE_HIGH)
+    {
+        lastOnMode = MODE_MED;
+    }
 
     resetAccelTimeout();
 
@@ -114,6 +133,12 @@ void setup()
 void loop()
 {
     const unsigned long time = millis();
+
+    if (poweringOffTime > 0 && time > poweringOffTime)
+    {
+        powerOff();
+        return;
+    }
 
     checkChargeState();
     oneSecondLoop();
@@ -134,9 +159,9 @@ void loop()
     switch (mode)
     {
         case MODE_OFF:
-            if (btnDown && !newBtnDown && (time-btnTime)>20)
+            if (btnDown && !newBtnDown && (time - btnTime) > 20)
             {
-                if (time - lastModeTime > 1000)
+                if (lastModeTime == 0 || time - lastModeTime > 1000)
                 {
                     Serial.print("lastOnMode = ");
                     Serial.println(lastOnMode);
@@ -147,14 +172,16 @@ void loop()
                 {
                     newMode = MODE_LOW;
                 }
+                break;
             }
-            if (btnDown && newBtnDown && (time-btnTime)>500)
+            if (btnDown && newBtnDown && (time - btnTime) > 500)
             {
                 newMode = MODE_BLINKING_PREVIEW;
+                break;
             }
             break;
         case MODE_LOW:
-            if (btnDown && !newBtnDown && (time-btnTime)>50)
+            if (btnDown && !newBtnDown && (time - btnTime) > 50)
             {
                 if (time - lastModeTime > buttonTimeoutToOffMilliseconds)
                 {
@@ -167,7 +194,7 @@ void loop()
             }
             break;
         case MODE_MED:
-            if (btnDown && !newBtnDown && (time-btnTime)>50)
+            if (btnDown && !newBtnDown && (time - btnTime) > 50)
             {
                 if (time - lastModeTime > buttonTimeoutToOffMilliseconds)
                 {
@@ -180,7 +207,7 @@ void loop()
             }
             break;
         case MODE_HIGH:
-            if (btnDown && !newBtnDown && (time-btnTime)>50)
+            if (btnDown && !newBtnDown && (time - btnTime) > 50)
                 newMode = MODE_OFF;
             break;
         case MODE_BLINKING_PREVIEW:
@@ -189,7 +216,7 @@ void loop()
                 newMode = MODE_BLINKING;
             break;
         case MODE_BLINKING:
-            if (btnDown && !newBtnDown && (time-btnTime)>50)
+            if (btnDown && !newBtnDown && (time - btnTime) > 50)
             {
                 if (time - lastModeTime > 3000)
                 {
@@ -211,15 +238,12 @@ void loop()
                 break;
             case MODE_LOW:
                 setLightLow();
-                lastOnMode = newMode;
                 break;
             case MODE_MED:
                 setLightMed();
-                lastOnMode = newMode;
                 break;
             case MODE_HIGH:
                 setLightHigh();
-                lastOnMode = newMode;
                 break;
             case MODE_BLINKING:
             case MODE_BLINKING_PREVIEW:
@@ -341,6 +365,15 @@ void checkAccel()
     }
 }
 
+void powerOff()
+{
+    pinMode(DPIN_PWR, OUTPUT);
+    digitalWrite(DPIN_PWR, LOW);
+    digitalWrite(DPIN_DRV_MODE, LOW);
+    digitalWrite(DPIN_DRV_EN, LOW);
+    EEPROM.write(EEPROM_LAST_ON_MODE, lastOnMode);
+}
+
 void setLightOff()
 {
     setLight(MODE_OFF);
@@ -372,10 +405,11 @@ void setLight(byte lightMode)
     {
         case MODE_OFF:
             Serial.println("Mode = off");
-            pinMode(DPIN_PWR, OUTPUT);
-            digitalWrite(DPIN_PWR, LOW);
+            //pinMode(DPIN_PWR, OUTPUT);
+            //digitalWrite(DPIN_PWR, LOW);
             digitalWrite(DPIN_DRV_MODE, LOW);
             digitalWrite(DPIN_DRV_EN, LOW);
+            poweringOffTime = millis() + (buttonTimeoutToOffMilliseconds * 3);
             break;
         case MODE_LOW:
             Serial.println("Mode = low");
@@ -383,6 +417,8 @@ void setLight(byte lightMode)
             digitalWrite(DPIN_PWR, HIGH);
             digitalWrite(DPIN_DRV_MODE, LOW);
             analogWrite(DPIN_DRV_EN, 64);
+            lastOnMode = lightMode;
+            poweringOffTime = 0;
             break;
         case MODE_MED:
             Serial.println("Mode = medium");
@@ -390,6 +426,8 @@ void setLight(byte lightMode)
             digitalWrite(DPIN_PWR, HIGH);
             digitalWrite(DPIN_DRV_MODE, LOW);
             analogWrite(DPIN_DRV_EN, 255);
+            lastOnMode = lightMode;
+            poweringOffTime = 0;
             break;
         case MODE_HIGH:
             Serial.println("Mode = high");
@@ -397,12 +435,15 @@ void setLight(byte lightMode)
             digitalWrite(DPIN_PWR, HIGH);
             digitalWrite(DPIN_DRV_MODE, HIGH);
             analogWrite(DPIN_DRV_EN, 255);
+            lastOnMode = lightMode;
+            poweringOffTime = 0;
             break;
         case MODE_BLINKING:
         case MODE_BLINKING_PREVIEW:
             Serial.print("Mode = blinking, brightness mode = ");
             Serial.println(lastOnMode);
             setLight(lastOnMode);
+            poweringOffTime = 0;
             break;
     }
 
@@ -418,36 +459,6 @@ void resetAccelTimeout()
     const unsigned long time = millis();
     lastAccelTime = time;
     noAccelShutoffTime = time + noAccelShutoffMilliseconds;
-}
-
-void readAccel(char *acc)
-{
-    while (1)
-    {
-        Wire.beginTransmission(ACC_ADDRESS);
-        Wire.write(ACC_REG_XOUT);
-        Wire.endTransmission(false);       // End, but do not stop!
-        Wire.requestFrom(ACC_ADDRESS, 3);  // This one stops.
-
-        for (int i = 0; i < 3; i++)
-        {
-            if (!Wire.available())
-                continue;
-            acc[i] = Wire.read();
-            if (acc[i] & 0x40)  // Indicates failed read; redo!
-                continue;
-            if (acc[i] & 0x20)  // Sign-extend
-                acc[i] |= 0xC0;
-        }
-        break;
-    }
-}
-
-float readAccelAngleXZ()
-{
-    char acc[3];
-    readAccel(acc);
-    return atan2(acc[0], acc[2]);
 }
 
 
