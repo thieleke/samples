@@ -371,7 +371,13 @@ void powerOff()
     digitalWrite(DPIN_PWR, LOW);
     digitalWrite(DPIN_DRV_MODE, LOW);
     digitalWrite(DPIN_DRV_EN, LOW);
-    EEPROM.write(EEPROM_LAST_ON_MODE, lastOnMode);
+
+    // Don't unnecessarily update the EEPROM
+    byte eepromLastOnMode = EEPROM.read(EEPROM_LAST_ON_MODE);
+    if (eepromLastOnMode != lastOnMode)
+    {
+        EEPROM.write(EEPROM_LAST_ON_MODE, lastOnMode);
+    }
 }
 
 void setLightOff()
@@ -405,8 +411,6 @@ void setLight(byte lightMode)
     {
         case MODE_OFF:
             Serial.println("Mode = off");
-            //pinMode(DPIN_PWR, OUTPUT);
-            //digitalWrite(DPIN_PWR, LOW);
             digitalWrite(DPIN_DRV_MODE, LOW);
             digitalWrite(DPIN_DRV_EN, LOW);
             poweringOffTime = millis() + (buttonTimeoutToOffMilliseconds * 3);
