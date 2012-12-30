@@ -218,7 +218,7 @@ void loop()
         case MODE_BLINKING:
             if (btnDown && !newBtnDown && (time - btnTime) > 50)
             {
-                if (time - lastModeTime > 3000)
+                if (time - lastModeTime > 2000)
                 {
                     newMode = MODE_OFF;
                 }
